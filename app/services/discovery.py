@@ -7,6 +7,7 @@ from app.models import Candidate, SearchResponse, SourceStatus
 from app.services.scoring import score_candidate_fields
 from app.services.sources import search_github, search_mcp_registry
 from app.services.quality import assess_github_quality
+from app.services.evidence import enrich_github_candidates
 
 
 def _license_name(repo: dict[str, Any]) -> str | None:
@@ -136,6 +137,10 @@ async def discover(query: str, limit: int) -> SearchResponse:
         key=lambda item: (item.relevance_score, item.stars or 0),
         reverse=True,
     )[:limit]
+
+    # Add README/release evidence only to the highest-ranked GitHub results.
+    # Evidence fetch failures are recorded as caveats and do not fail discovery.
+    await enrich_github_candidates(results, max_candidates=3)
 
     return SearchResponse(
         query=query,

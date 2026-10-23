@@ -22,6 +22,10 @@ class Candidate(BaseModel):
     relevance_score: float
     quality_score: int | None = None
     quality_signals: list[str] = Field(default_factory=list)
+    evidence: list[dict[str, str]] = Field(default_factory=list)
+    setup_instructions: list[str] = Field(default_factory=list)
+    release_url: str | None = None
+    recommendation_reasons: list[str] = Field(default_factory=list)
     matched_terms: list[str] = Field(default_factory=list)
     caveats: list[str] = Field(default_factory=list)
 
