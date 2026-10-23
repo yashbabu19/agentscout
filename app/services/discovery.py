@@ -4,7 +4,7 @@ from typing import Any
 import httpx
 
 from app.models import Candidate, SearchResponse, SourceStatus
-from app.services.scoring import score_candidate
+from app.services.scoring import score_candidate_fields
 from app.services.sources import search_github, search_mcp_registry
 
 
@@ -22,10 +22,14 @@ def _github_candidate(item: dict[str, Any], query: str) -> Candidate | None:
         return None
 
     description = item.get("description") or ""
-    score, matched = score_candidate(
-        query,
-        [name, description, item.get("topics") and " ".join(item["topics"]) or ""],
+    topics = item.get("topics") or []
+    if not isinstance(topics, list):
+        topics = []
+
+    score, matched = score_candidate_fields(
+        query, name, description, topics
     )
+
     caveats = ["Repository metadata is not a security audit."]
     if item.get("archived"):
         caveats.append("Repository is archived.")
@@ -61,7 +65,6 @@ def _mcp_candidate(item: dict[str, Any], query: str) -> Candidate | None:
     repo = server.get("repository") or {}
     url = repo.get("url") if isinstance(repo, dict) else None
     if not url:
-        # Some registry records have package details but no source URL.
         packages = server.get("packages") or []
         if packages and isinstance(packages[0], dict):
             url = packages[0].get("registryBaseUrl")
@@ -69,7 +72,8 @@ def _mcp_candidate(item: dict[str, Any], query: str) -> Candidate | None:
         url = "https://registry.modelcontextprotocol.io/"
 
     description = server.get("description") or ""
-    score, matched = score_candidate(query, [name, description])
+    score, matched = score_candidate_fields(query, name, description)
+
     return Candidate(
         id=f"mcp:{name}",
         name=name,
@@ -85,10 +89,16 @@ def _mcp_candidate(item: dict[str, Any], query: str) -> Candidate | None:
 
 async def discover(query: str, limit: int) -> SearchResponse:
     timeout = httpx.Timeout(15.0, connect=3.0)
-    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
-        github_task = search_github(client, f"{query} (agent OR MCP OR skill)", limit)
+    async with httpx.AsyncClient(
+        timeout=timeout, follow_redirects=True
+    ) as client:
+        github_task = search_github(
+            client, f"{query} (agent OR MCP OR skill)", limit
+        )
         mcp_task = search_mcp_registry(client, query, limit)
-        github_items, mcp_items = await asyncio.gather(github_task, mcp_task)
+        github_items, mcp_items = await asyncio.gather(
+            github_task, mcp_task
+        )
 
     github_rows, github_error = github_items
     mcp_rows, mcp_error = mcp_items
@@ -98,19 +108,20 @@ async def discover(query: str, limit: int) -> SearchResponse:
         candidate = _github_candidate(item, query)
         if candidate:
             candidates.append(candidate)
+
     for item in mcp_rows:
         candidate = _mcp_candidate(item, query)
         if candidate:
             candidates.append(candidate)
 
-    # Deduplicate by normalised URL; keep the candidate with the strongest baseline score.
+    # Deduplicate URLs, keeping the candidate with the strongest score.
     unique: dict[str, Candidate] = {}
     for candidate in candidates:
         key = str(candidate.url).rstrip("/").lower()
-        if key not in unique or candidate.relevance_score > unique[key].relevance_score:
+        existing = unique.get(key)
+        if existing is None or candidate.relevance_score > existing.relevance_score:
             unique[key] = candidate
 
-    # Never recommend candidates that matched no meaningful query terms.
     relevant_candidates = [
         item for item in unique.values()
         if item.relevance_score > 0
