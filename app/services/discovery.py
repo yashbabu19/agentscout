@@ -13,8 +13,21 @@ from app.services.evidence import enrich_github_candidates
 
 def _license_name(repo: dict[str, Any]) -> str | None:
     license_info = repo.get("license")
-    if isinstance(license_info, dict):
-        return license_info.get("spdx_id") or license_info.get("name")
+    if not isinstance(license_info, dict):
+        return None
+
+    spdx_id = license_info.get("spdx_id")
+    if isinstance(spdx_id, str) and spdx_id.strip():
+        normalized = spdx_id.strip()
+        if normalized.upper() not in {"NOASSERTION", "OTHER"}:
+            return normalized
+
+    name = license_info.get("name")
+    if isinstance(name, str) and name.strip():
+        normalized = name.strip()
+        if normalized.lower() not in {"other", "noassertion"}:
+            return normalized
+
     return None
 
 
