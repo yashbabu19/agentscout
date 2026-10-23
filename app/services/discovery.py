@@ -1,4 +1,5 @@
 import asyncio
+import re
 from typing import Any
 
 import httpx
@@ -15,6 +16,39 @@ def _license_name(repo: dict[str, Any]) -> str | None:
     if isinstance(license_info, dict):
         return license_info.get("spdx_id") or license_info.get("name")
     return None
+
+
+def _matches_explicit_intent(
+    query: str,
+    name: str,
+    description: str = "",
+    topics: list[str] | None = None,
+    source: str = "",
+) -> bool:
+    """Reject candidates missing explicitly requested integration evidence."""
+    def words(value: str) -> set[str]:
+        return set(re.findall(r"[a-z0-9]+", value.lower()))
+
+    query_words = words(query)
+    candidate_words = words(
+        " ".join([name, description, *(topics or [])])
+    )
+
+    # An explicit GitHub integration request needs metadata evidence.
+    if "github" in query_words and "github" not in candidate_words:
+        return False
+
+    # For GitHub results, an explicit MCP request needs MCP evidence.
+    mcp_requested = "mcp" in query_words or (
+        {"model", "context", "protocol"} <= query_words
+    )
+    mcp_mentioned = "mcp" in candidate_words or (
+        {"model", "context", "protocol"} <= candidate_words
+    )
+    if source == "github" and mcp_requested and not mcp_mentioned:
+        return False
+
+    return True
 
 
 def _github_candidate(item: dict[str, Any], query: str) -> Candidate | None:
@@ -110,11 +144,38 @@ async def discover(query: str, limit: int) -> SearchResponse:
 
     candidates: list[Candidate] = []
     for item in github_rows:
+        topics = item.get("topics") or []
+        if not isinstance(topics, list):
+            topics = []
+
+        if not _matches_explicit_intent(
+            query=query,
+            name=str(item.get("full_name") or item.get("name") or ""),
+            description=str(item.get("description") or ""),
+            topics=topics,
+            source="github",
+        ):
+            continue
+
         candidate = _github_candidate(item, query)
         if candidate:
             candidates.append(candidate)
 
     for item in mcp_rows:
+        server = item.get("server", item)
+        if not isinstance(server, dict):
+            continue
+
+        server_name = str(server.get("name") or server.get("title") or "")
+        server_description = str(server.get("description") or "")
+        if not _matches_explicit_intent(
+            query=query,
+            name=server_name,
+            description=server_description,
+            source="mcp_registry",
+        ):
+            continue
+
         candidate = _mcp_candidate(item, query)
         if candidate:
             candidates.append(candidate)
