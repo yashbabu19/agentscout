@@ -8,7 +8,8 @@ STOP_WORDS = {
     "find", "best", "using", "use", "please", "search",
     "searching", "analyze", "analyzing", "analyse", "claude",
     "code", "agent", "agents", "tool", "tools", "server",
-    "servers", "mcp", "skill", "skills",
+    "servers", "mcp", "skill", "skills", "build", "create",
+    "make", "help", "them", "their",
 }
 
 ALIASES = {
@@ -17,6 +18,10 @@ ALIASES = {
     "financial": "finance",
     "equities": "equity",
     "trading": "trade",
+    "investments": "investment",
+    "investing": "investment",
+    "brokers": "broker",
+    "repositories": "repository",
 }
 
 NON_FINANCIAL_STOCK_PHRASES = (

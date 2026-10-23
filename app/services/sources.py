@@ -13,8 +13,20 @@ IGNORED_QUERY_WORDS = {
     "analyse", "analyze", "using", "use", "for", "with", "from",
     "that", "this", "want", "need", "please", "the", "and", "are",
     "mcp", "server", "servers", "agent", "agents", "claude", "code",
-    "skill", "skills", "tool", "tools",
+    "skill", "skills", "tool", "tools", "build", "create", "make",
+    "help", "me", "my", "to", "a", "an", "of", "in", "on",
 }
+
+FINANCE_TERMS = {
+    "stock", "stocks", "market", "markets", "finance", "financial",
+    "trading", "trade", "equity", "equities", "nse", "bse",
+    "investment", "investments", "investing", "portfolio", "broker",
+}
+
+
+def _is_finance_query(query: str) -> bool:
+    words = set(re.findall(r"[a-zA-Z0-9+#.-]+", query.lower()))
+    return bool(words & FINANCE_TERMS)
 
 
 def _github_headers() -> dict[str, str]:
@@ -30,45 +42,40 @@ def _github_headers() -> dict[str, str]:
 
 
 def _github_queries(query: str) -> list[str]:
-    text = query.lower()
-
-    if any(word in text for word in (
-        "stock", "market", "finance", "financial",
-        "trading", "equity", "equities", "nse", "bse",
-    )):
+    if _is_finance_query(query):
+        # Search README content too, not just repository names/descriptions.
         return [
-            "stock in:name,description",
-            "finance in:name,description",
-            "financial data in:name,description",
-            "trading in:name,description",
-            "market data in:name,description",
+            "stock in:name,description,readme",
+            "finance in:name,description,readme",
+            "trading in:name,description,readme",
+            "market in:name,description,readme",
+            "NSE OR BSE in:name,description,readme",
         ]
 
     words = [
-        word for word in re.findall(r"[a-zA-Z0-9+#.-]+", text)
+        word
+        for word in re.findall(r"[a-zA-Z0-9+#.-]+", query.lower())
         if len(word) > 2 and word not in IGNORED_QUERY_WORDS
     ]
 
+    # Preserve order while removing duplicate terms.
+    words = list(dict.fromkeys(words))
     return [
-        f"{word} in:name,description"
+        f"{word} in:name,description,readme"
         for word in words[:3]
     ]
 
 
 def _registry_queries(query: str) -> list[str]:
-    text = query.lower()
-
-    if any(word in text for word in (
-        "stock", "market", "finance", "financial",
-        "trading", "equity", "equities", "nse", "bse",
-    )):
+    if _is_finance_query(query):
         return ["stock", "finance", "market", "trading"]
 
     words = [
-        word for word in re.findall(r"[a-zA-Z0-9+#.-]+", text)
+        word
+        for word in re.findall(r"[a-zA-Z0-9+#.-]+", query.lower())
         if len(word) > 2 and word not in IGNORED_QUERY_WORDS
     ]
-    return words[:3]
+    return list(dict.fromkeys(words))[:3]
 
 
 async def search_github(
@@ -90,7 +97,9 @@ async def search_github(
             headers=_github_headers(),
         )
         response.raise_for_status()
-        return response.json().get("items", [])
+        payload = response.json()
+        items = payload.get("items", [])
+        return items if isinstance(items, list) else []
 
     responses = await asyncio.gather(
         *(fetch(q) for q in queries),
