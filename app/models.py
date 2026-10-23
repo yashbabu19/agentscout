@@ -20,6 +20,8 @@ class Candidate(BaseModel):
     language: str | None = None
     license: str | None = None
     relevance_score: float
+    quality_score: int | None = None
+    quality_signals: list[str] = Field(default_factory=list)
     matched_terms: list[str] = Field(default_factory=list)
     caveats: list[str] = Field(default_factory=list)
 

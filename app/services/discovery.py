@@ -6,6 +6,7 @@ import httpx
 from app.models import Candidate, SearchResponse, SourceStatus
 from app.services.scoring import score_candidate_fields
 from app.services.sources import search_github, search_mcp_registry
+from app.services.quality import assess_github_quality
 
 
 def _license_name(repo: dict[str, Any]) -> str | None:
@@ -29,6 +30,7 @@ def _github_candidate(item: dict[str, Any], query: str) -> Candidate | None:
     score, matched = score_candidate_fields(
         query, name, description, topics
     )
+    quality_score, quality_signals = assess_github_quality(item)
 
     caveats = ["Repository metadata is not a security audit."]
     if item.get("archived"):
@@ -50,6 +52,8 @@ def _github_candidate(item: dict[str, Any], query: str) -> Candidate | None:
         relevance_score=score,
         matched_terms=matched,
         caveats=caveats,
+        quality_score=quality_score,
+        quality_signals=quality_signals,
     )
 
 
