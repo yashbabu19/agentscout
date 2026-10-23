@@ -38,7 +38,7 @@ def _matches_explicit_intent(
     topics: list[str] | None = None,
     source: str = "",
 ) -> bool:
-    """Reject candidates missing explicitly requested integration evidence."""
+    """Filter candidates that lack evidence for explicit query requirements."""
     def words(value: str) -> set[str]:
         return set(re.findall(r"[a-z0-9]+", value.lower()))
 
@@ -47,21 +47,39 @@ def _matches_explicit_intent(
         " ".join([name, description, *(topics or [])])
     )
 
-    # An explicit GitHub integration request needs metadata evidence.
-    if "github" in query_words and "github" not in candidate_words:
+    # Recognized integrations/platforms. Hosting a repository on GitHub
+    # alone does not establish that the project integrates with GitHub.
+    integrations = {
+        "github", "gitlab", "bitbucket", "slack", "discord",
+        "telegram", "jira", "notion", "linear", "trello",
+        "postgres", "postgresql", "mysql", "mongodb", "redis",
+        "docker", "kubernetes", "aws", "azure",
+    }
+    requested_integrations = query_words & integrations
+
+    if not requested_integrations.issubset(candidate_words):
         return False
 
-    # For GitHub results, an explicit MCP request needs MCP evidence.
     mcp_requested = "mcp" in query_words or (
         {"model", "context", "protocol"} <= query_words
     )
     mcp_mentioned = "mcp" in candidate_words or (
         {"model", "context", "protocol"} <= candidate_words
     )
+
+    # MCP registry entries are already MCP resources. GitHub results
+    # must independently provide metadata evidence of MCP support.
     if source == "github" and mcp_requested and not mcp_mentioned:
         return False
 
+    skill_requested = bool(query_words & {"skill", "skills"})
+    skill_mentioned = bool(candidate_words & {"skill", "skills"})
+
+    if source == "github" and skill_requested and not skill_mentioned:
+        return False
+
     return True
+
 
 
 def _github_candidate(item: dict[str, Any], query: str) -> Candidate | None:
@@ -76,15 +94,20 @@ def _github_candidate(item: dict[str, Any], query: str) -> Candidate | None:
         topics = []
 
     score, matched = score_candidate_fields(
-        query, name, description, topics
+        query,
+        name,
+        description,
+        [*topics, str(item.get("language") or "")],
     )
     quality_score, quality_signals = assess_github_quality(item)
 
     caveats = ["Repository metadata is not a security audit."]
     if item.get("archived"):
         caveats.append("Repository is archived.")
-    if not item.get("license"):
-        caveats.append("No license detected in repository metadata.")
+    if not _license_name(item):
+        caveats.append(
+            "License is unknown or not confirmed by repository metadata."
+        )
 
     return Candidate(
         id=f"github:{item.get('id', name)}",
@@ -208,7 +231,11 @@ async def discover(query: str, limit: int) -> SearchResponse:
 
     results = sorted(
         relevant_candidates,
-        key=lambda item: (item.relevance_score, item.stars or 0),
+        key=lambda item: (
+            item.relevance_score,
+            item.quality_score if item.quality_score is not None else -1,
+            item.stars or 0,
+        ),
         reverse=True,
     )[:limit]
 
