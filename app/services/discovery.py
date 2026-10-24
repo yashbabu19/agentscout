@@ -37,27 +37,39 @@ def _matches_explicit_intent(
     description: str = "",
     topics: list[str] | None = None,
     source: str = "",
+    search_queries: list[str] | None = None,
 ) -> bool:
-    """Filter candidates that lack evidence for explicit query requirements."""
+    """Require evidence for requested integrations, resource types, and tasks."""
     def words(value: str) -> set[str]:
-        return set(re.findall(r"[a-z0-9]+", value.lower()))
+        found = set(re.findall(r"[a-z0-9]+", value.lower()))
+        aliases = {
+            "automate": "automation",
+            "automated": "automation",
+            "automating": "automation",
+            "skills": "skill",
+        }
+        return {aliases.get(word, word) for word in found}
 
     query_words = words(query)
     candidate_words = words(
         " ".join([name, description, *(topics or [])])
     )
+    searched_words = words(" ".join(search_queries or []))
 
-    # Recognized integrations/platforms. Hosting a repository on GitHub
-    # alone does not establish that the project integrates with GitHub.
     integrations = {
         "github", "gitlab", "bitbucket", "slack", "discord",
         "telegram", "jira", "notion", "linear", "trello",
         "postgres", "postgresql", "mysql", "mongodb", "redis",
         "docker", "kubernetes", "aws", "azure",
     }
-    requested_integrations = query_words & integrations
 
-    if not requested_integrations.issubset(candidate_words):
+    for integration in query_words & integrations:
+        if integration in candidate_words:
+            continue
+        # A GitHub search can match README content that isn't present
+        # in repository name, description, or topics.
+        if source == "github" and integration in searched_words:
+            continue
         return False
 
     mcp_requested = "mcp" in query_words or (
@@ -66,16 +78,27 @@ def _matches_explicit_intent(
     mcp_mentioned = "mcp" in candidate_words or (
         {"model", "context", "protocol"} <= candidate_words
     )
+    if source == "github" and mcp_requested:
+        if not mcp_mentioned and "mcp" not in searched_words:
+            return False
 
-    # MCP registry entries are already MCP resources. GitHub results
-    # must independently provide metadata evidence of MCP support.
-    if source == "github" and mcp_requested and not mcp_mentioned:
-        return False
+    skill_requested = "skill" in query_words
+    if skill_requested:
+        # An MCP server is not automatically an agent skill.
+        if source == "mcp_registry":
+            return False
+        if "skill" not in candidate_words and "skill" not in searched_words:
+            return False
 
-    skill_requested = bool(query_words & {"skill", "skills"})
-    skill_mentioned = bool(candidate_words & {"skill", "skills"})
+    # Prevent animal-market matches from satisfying stock-market intent.
+    if {"stock", "market"} <= query_words:
+        if not {"stock", "market"} <= candidate_words:
+            return False
+        if candidate_words & {"livestock", "cattle", "sheep", "goat", "poultry"}:
+            return False
 
-    if source == "github" and skill_requested and not skill_mentioned:
+    # A generic Python repository isn't necessarily an automation tool.
+    if "automation" in query_words and "automation" not in candidate_words:
         return False
 
     return True
@@ -190,6 +213,7 @@ async def discover(query: str, limit: int) -> SearchResponse:
             description=str(item.get("description") or ""),
             topics=topics,
             source="github",
+            search_queries=item.get("_agentscout_search_queries", []),
         ):
             continue
 

@@ -42,41 +42,54 @@ def _github_headers() -> dict[str, str]:
 
 
 def _github_queries(query: str) -> list[str]:
+    query_words = set(re.findall(r"[a-zA-Z0-9+#.-]+", query.lower()))
+    skill_requested = bool(query_words & {"skill", "skills"})
+
     if _is_finance_query(query):
-        # Search README content too, not just repository names/descriptions.
-        return [
+        queries = [
             "stock in:name,description,readme",
             "finance in:name,description,readme",
             "trading in:name,description,readme",
             "market in:name,description,readme",
             "NSE OR BSE in:name,description,readme",
         ]
+        if skill_requested:
+            queries = [
+                "stock skill in:name,description,readme",
+                "finance skill in:name,description,readme",
+                *queries,
+            ]
+        return list(dict.fromkeys(queries))
 
+    explicit_terms = query_words & {"github", "skill", "skills"}
     words = [
         word
         for word in re.findall(r"[a-zA-Z0-9+#.-]+", query.lower())
-        if len(word) > 2 and word not in IGNORED_QUERY_WORDS
+        if len(word) > 2
+        and (word not in IGNORED_QUERY_WORDS or word in explicit_terms)
     ]
-
-    # Preserve order while removing duplicate terms.
     words = list(dict.fromkeys(words))
-    return [
-        f"{word} in:name,description,readme"
-        for word in words[:3]
-    ]
+    return [f"{word} in:name,description,readme" for word in words[:5]]
 
 
 def _registry_queries(query: str) -> list[str]:
+    query_words = set(re.findall(r"[a-zA-Z0-9+#.-]+", query.lower()))
+
+    # The MCP registry contains MCP servers, not standalone agent skills.
+    if query_words & {"skill", "skills"}:
+        return []
+
     if _is_finance_query(query):
         return ["stock", "finance", "market", "trading"]
 
+    explicit_terms = query_words & {"github"}
     words = [
         word
         for word in re.findall(r"[a-zA-Z0-9+#.-]+", query.lower())
-        if len(word) > 2 and word not in IGNORED_QUERY_WORDS
+        if len(word) > 2
+        and (word not in IGNORED_QUERY_WORDS or word in explicit_terms)
     ]
-    return list(dict.fromkeys(words))[:3]
-
+    return list(dict.fromkeys(words))[:5]
 
 async def search_github(
     client: httpx.AsyncClient, query: str, limit: int
@@ -109,14 +122,17 @@ async def search_github(
     rows: dict[str, dict[str, Any]] = {}
     errors: list[str] = []
 
-    for result in responses:
+    for search_query, result in zip(queries, responses):
         if isinstance(result, Exception):
             errors.append(type(result).__name__)
             continue
         for item in result:
             key = str(item.get("id") or item.get("html_url") or "")
             if key:
-                rows[key] = item
+                row = rows.setdefault(key, dict(item))
+                matched_queries = row.setdefault("_agentscout_search_queries", [])
+                if search_query not in matched_queries:
+                    matched_queries.append(search_query)
 
     if not rows and errors:
         return [], f"GitHub search failed: {', '.join(sorted(set(errors)))}"

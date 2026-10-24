@@ -70,3 +70,44 @@ def test_name_match_scores_higher_than_description_only_match():
         "Python automation tool", []
     )
     assert name_score > description_score
+
+
+def test_rejects_mcp_registry_server_for_skill_request():
+    assert not _matches_explicit_intent(
+        query="stock-market agent skill for Claude Code",
+        name="trade.coil/stock-market-scanner",
+        description="Stock market trading signals",
+        source="mcp_registry",
+    )
+
+
+def test_rejects_livestock_market_for_stock_market_query():
+    assert not _matches_explicit_intent(
+        query="stock-market agent skill for Claude Code",
+        name="io.github.comndllc/livestock-market-prices",
+        description="Cattle, sheep, and goat prices and market reports",
+        source="github",
+    )
+
+
+def test_automation_query_requires_automation_evidence():
+    assert not _matches_explicit_intent(
+        query="Python automation tool",
+        name="public-apis",
+        description="A collective list of free APIs",
+        source="github",
+    )
+
+
+def test_accepts_github_mcp_match_found_through_readme_search():
+    assert _matches_explicit_intent(
+        query="Python MCP server for GitHub",
+        name="example/python-mcp",
+        description="Python MCP server",
+        source="github",
+        search_queries=[
+            "python in:name,description,readme",
+            "mcp in:name,description,readme",
+            "github in:name,description,readme",
+        ],
+    )
