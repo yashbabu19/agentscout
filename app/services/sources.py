@@ -46,20 +46,20 @@ def _github_queries(query: str) -> list[str]:
     skill_requested = bool(query_words & {"skill", "skills"})
 
     if _is_finance_query(query):
-        queries = [
+        if skill_requested:
+            return [
+                "stock skill in:name,description,readme",
+                "finance skill in:name,description,readme",
+                "trading skill in:name,description,readme",
+            ]
+
+        return [
             "stock in:name,description,readme",
             "finance in:name,description,readme",
             "trading in:name,description,readme",
             "market in:name,description,readme",
             "NSE OR BSE in:name,description,readme",
         ]
-        if skill_requested:
-            queries = [
-                "stock skill in:name,description,readme",
-                "finance skill in:name,description,readme",
-                *queries,
-            ]
-        return list(dict.fromkeys(queries))
 
     explicit_terms = query_words & {"github", "skill", "skills"}
     words = [
@@ -124,7 +124,13 @@ async def search_github(
 
     for search_query, result in zip(queries, responses):
         if isinstance(result, Exception):
-            errors.append(type(result).__name__)
+            response = getattr(result, "response", None)
+            if response is not None:
+                errors.append(
+                    f"{type(result).__name__} (HTTP {response.status_code})"
+                )
+            else:
+                errors.append(type(result).__name__)
             continue
         for item in result:
             key = str(item.get("id") or item.get("html_url") or "")

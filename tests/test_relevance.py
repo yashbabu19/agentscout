@@ -111,3 +111,32 @@ def test_accepts_github_mcp_match_found_through_readme_search():
             "github in:name,description,readme",
         ],
     )
+
+def test_python_query_rejects_non_python_automation_project():
+    assert not _matches_explicit_intent(
+        query="Python automation tool",
+        name="n8n-io/n8n",
+        description="Workflow automation platform with native AI",
+        source="github",
+    )
+
+
+def test_python_query_accepts_python_metadata():
+    assert _matches_explicit_intent(
+        query="Python automation tool",
+        name="example/task-automation",
+        description="Automate repetitive tasks",
+        topics=["automation", "python"],
+        source="github",
+    )
+
+
+def test_registry_mcp_without_language_metadata_is_not_rejected():
+    assert _matches_explicit_intent(
+        query="Python MCP server for GitHub",
+        name="example/github-mcp",
+        description="An MCP server for managing GitHub repositories",
+        topics=["mcp", "github"],
+        source="mcp_registry",
+    )
+

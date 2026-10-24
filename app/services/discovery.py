@@ -101,6 +101,26 @@ def _matches_explicit_intent(
     if "automation" in query_words and "automation" not in candidate_words:
         return False
 
+    # Require evidence for requested programming languages.
+    language_requirements = {
+        "python": {"python"},
+        "java": {"java"},
+        "javascript": {"javascript", "js"},
+        "typescript": {"typescript"},
+        "rust": {"rust"},
+        "golang": {"golang", "go"},
+    }
+
+    for requested_language, aliases in language_requirements.items():
+        if requested_language not in query_words:
+            continue
+        if not (candidate_words & aliases):
+            # Registry metadata may omit language details. Do not reject
+            # an otherwise relevant MCP integration solely for that omission.
+            if source == "mcp_registry":
+                continue
+            return False
+
     return True
 
 
@@ -211,7 +231,7 @@ async def discover(query: str, limit: int) -> SearchResponse:
             query=query,
             name=str(item.get("full_name") or item.get("name") or ""),
             description=str(item.get("description") or ""),
-            topics=topics,
+            topics=[*topics, str(item.get("language") or "")],
             source="github",
             search_queries=item.get("_agentscout_search_queries", []),
         ):
