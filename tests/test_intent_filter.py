@@ -30,8 +30,8 @@ def test_rejects_registry_result_without_requested_github_integration():
     )
 
 
-def test_accepts_registry_result_describing_github_integration():
-    assert _matches_explicit_intent(
+def test_rejects_registry_result_without_python_language_evidence():
+    assert not _matches_explicit_intent(
         query="Python MCP server for GitHub",
         name="github-mcp",
         description="MCP server for GitHub repositories",

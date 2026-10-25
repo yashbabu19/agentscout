@@ -131,8 +131,8 @@ def test_python_query_accepts_python_metadata():
     )
 
 
-def test_registry_mcp_without_language_metadata_is_not_rejected():
-    assert _matches_explicit_intent(
+def test_registry_mcp_without_language_metadata_is_rejected():
+    assert not _matches_explicit_intent(
         query="Python MCP server for GitHub",
         name="example/github-mcp",
         description="An MCP server for managing GitHub repositories",
@@ -140,3 +140,14 @@ def test_registry_mcp_without_language_metadata_is_not_rejected():
         source="mcp_registry",
     )
 
+
+
+def test_accepts_stock_skill_found_by_finance_search():
+    assert _matches_explicit_intent(
+        query="stock-market agent skill for Claude Code",
+        name="example/market-research",
+        description="A reusable research skill",
+        topics=["agent-skill"],
+        source="github",
+        search_queries=["stock skill in:name,description,readme"],
+    )

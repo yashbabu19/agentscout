@@ -92,9 +92,22 @@ def _matches_explicit_intent(
 
     # Prevent animal-market matches from satisfying stock-market intent.
     if {"stock", "market"} <= query_words:
-        if not {"stock", "market"} <= candidate_words:
-            return False
         if candidate_words & {"livestock", "cattle", "sheep", "goat", "poultry"}:
+            return False
+
+        finance_evidence = candidate_words & {
+            "stock", "market", "finance", "financial",
+            "trading", "trade", "investment", "equity",
+        }
+
+        if skill_requested:
+            # Skill searches can match README content not present in metadata.
+            skill_finance_search = source == "github" and bool(
+                searched_words & {"stock", "finance", "trading"}
+            )
+            if not finance_evidence and not skill_finance_search:
+                return False
+        elif not {"stock", "market"} <= candidate_words:
             return False
 
     # A generic Python repository isn't necessarily an automation tool.
@@ -115,10 +128,6 @@ def _matches_explicit_intent(
         if requested_language not in query_words:
             continue
         if not (candidate_words & aliases):
-            # Registry metadata may omit language details. Do not reject
-            # an otherwise relevant MCP integration solely for that omission.
-            if source == "mcp_registry":
-                continue
             return False
 
     return True
